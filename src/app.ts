@@ -4,6 +4,7 @@ import cors from "cors";
 import rateLimit from "express-rate-limit";
 
 import { env } from "./config/env.js";
+import { pool } from "./config/database.js"
 import { requestLogger } from "./middleware/requestLogger.js";
 import { requestId } from "./middleware/requestId.js";
 import { errorHandler } from "./middleware/errorHandler.js";
@@ -68,11 +69,13 @@ app.use(requestLogger);
 app.use(express.json({ limit: env.jsonBodyLimit }));
 app.use(express.urlencoded({ extended: false, limit: env.urlEncodedBodyLimit }));
 
-app.get("/api/health", (_req, res) => {
-    res.json({
-        success: true,
-        status: "ok",
-    });
+app.get("/api/health", async (_req, res) => {
+    try {
+        await pool.query("SELECT 1");
+        res.json({ status: "ok", database: "up" });
+    } catch {
+        res.status(503).json({ status: "error", database: "down" });
+    }
 });
 
 app.use("/api", equipmentRouter);

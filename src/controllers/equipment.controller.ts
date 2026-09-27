@@ -27,7 +27,7 @@ export function createEquipment(
 
     res.status(201).json({
         success: true,
-        data: equipment,
+        data: equipment.location,
     });
 }
 
@@ -53,10 +53,7 @@ export function patchEquipment(
 export function deleteEquipment(req: Request<{ id: string }>, res: Response<unknown>): void {
     const equipment = equipmentService.delete(req.params.id);
 
-    res.status(200).json({
-        success: true,
-        data: equipment,
-    });
+    res.sendStatus(204);
 }
 
 export function getMaintenanceRequestsByEquipmentId(req: Request<{ id: string }>, res: Response<unknown>): void {
