@@ -1,6 +1,15 @@
 import "reflect-metadata";
 import { Sequelize } from "sequelize-typescript";
 import { env } from "./env.js";
+import {
+    EquipmentEntity,
+    EquipmentPassportEntity,
+    MaintenanceRequestEntity,
+    RequestAssigneeEntity,
+    RequestStatusHistoryEntity,
+    SiteEntity,
+    TechnicianEntity,
+} from "../models/entities/index.js";
 
 export const sequelize = new Sequelize({
     dialect: "postgres",
@@ -11,6 +20,15 @@ export const sequelize = new Sequelize({
     password: env.database.password,
     pool: env.database.pool,
     logging: false,
+    models: [
+        SiteEntity,
+        EquipmentEntity,
+        EquipmentPassportEntity,
+        MaintenanceRequestEntity,
+        RequestStatusHistoryEntity,
+        TechnicianEntity,
+        RequestAssigneeEntity,
+    ],
 });
 
 export async function waitForDatabase({ attempts = 10, baseDelayMs = 500 } = {}) {
