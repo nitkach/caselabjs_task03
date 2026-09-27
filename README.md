@@ -1,8 +1,9 @@
 # CaseLab Maintenance API
 
 REST API на Express/TypeScript для учёта оборудования производственной площадки и
-заявок на техническое обслуживание. Данные хранятся в памяти процесса; доступ к
-ним выполняется через слой репозиториев. Эндпоинт прогноза использует Open-Meteo.
+заявок на техническое обслуживание. PostgreSQL используется для проверки
+доступности; миграционный контур настроен для последующего переноса данных из
+in-memory-репозиториев. Эндпоинт прогноза использует Open-Meteo.
 
 ## Требования
 
@@ -13,9 +14,19 @@ REST API на Express/TypeScript для учёта оборудования пр
 
 ```bash
 npm install
-cp .env.example .env       # Windows: copy .env.example .env
-npm run dev                 # разработка, порт 3000
+copy .env.example .env
+docker compose up -d db
+npm run db:migrate
+npm run db:seed:all
+npm run dev
 ```
+
+Миграции и сиды создаются в `db/migrations` и `db/seeders`. До добавления
+соответствующих файлов команды миграции/сидирования не создают прикладную схему
+и не наполняют базу. Так как пакет использует ESM, файлы CLI миграций и сидов
+должны быть CommonJS-файлами `.cjs` (сгенерированный CLI `.js` нужно переименовать).
+Сервер дожидается доступности PostgreSQL перед запуском;
+`GET /api/health` проверяет подключение через Sequelize.
 
 Для production:
 
@@ -44,6 +55,23 @@ npm start
 | `WEATHER_FORECAST_DAYS` | `3` | Количество дней прогноза |
 | `WEATHER_MAX_PRECIPITATION` | `1` | Допустимые осадки |
 | `WEATHER_MAX_WIND_SPEED_KMH` | `30` | Допустимая скорость ветра, км/ч |
+| `POSTGRES_DB` | `appdb` | Имя базы для инициализации контейнера Compose |
+| `POSTGRES_USER` | `app` | Пользователь для инициализации контейнера Compose |
+| `POSTGRES_PASSWORD` | — | Пароль для инициализации контейнера Compose |
+| `PGHOST` | `localhost` | Хост PostgreSQL для приложения и Sequelize CLI |
+| `PGPORT` | `5432` | Порт PostgreSQL |
+| `PGDATABASE` | — | Имя базы данных приложения |
+| `PGUSER` | — | Пользователь PostgreSQL приложения |
+| `PGPASSWORD` | — | Пароль PostgreSQL приложения |
+| `PG_POOL_MAX` | `10` | Максимальный размер пула Sequelize |
+| `PG_POOL_MIN` | `0` | Минимальный размер пула Sequelize |
+| `PG_POOL_ACQUIRE_MS` | `30000` | Таймаут получения соединения из пула |
+| `PG_POOL_IDLE_MS` | `10000` | Время простоя соединения до закрытия |
+
+Для отката последней миграции используйте `npm run db:migrate:undo`, всех
+миграций — `npm run db:migrate:undo:all`. Команды `db:seed:all` и
+`db:seed:undo:all` применяют и отменяют сиды. Данные подключения задаются через
+`.env`; файл `.env` не следует добавлять в репозиторий.
 
 ## Эндпоинты
 

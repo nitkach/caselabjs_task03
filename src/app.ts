@@ -4,7 +4,7 @@ import cors from "cors";
 import rateLimit from "express-rate-limit";
 
 import { env } from "./config/env.js";
-import { pool } from "./config/database.js"
+import { sequelize } from "./config/database.js";
 import { requestLogger } from "./middleware/requestLogger.js";
 import { requestId } from "./middleware/requestId.js";
 import { errorHandler } from "./middleware/errorHandler.js";
@@ -71,9 +71,10 @@ app.use(express.urlencoded({ extended: false, limit: env.urlEncodedBodyLimit }))
 
 app.get("/api/health", async (_req, res) => {
     try {
-        await pool.query("SELECT 1");
+        await sequelize.authenticate();
         res.json({ status: "ok", database: "up" });
-    } catch {
+    } catch (error) {
+        console.error("Database health check failed", error);
         res.status(503).json({ status: "error", database: "down" });
     }
 });
