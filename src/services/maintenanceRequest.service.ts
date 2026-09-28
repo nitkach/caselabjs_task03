@@ -1,10 +1,16 @@
-import { randomUUID } from "node:crypto";
+import { ForeignKeyConstraintError } from "sequelize";
 
 import type {
     MaintenanceRequest,
 } from "../models/maintenanceRequest.model.js";
-import { EquipmentRepository, equipmentRepository } from "../repositories/equipment.repository.js";
-import { MaintenanceRequestRepository, maintenanceRequestRepository } from "../repositories/maintenanceRequest.repository.js";
+import {
+    EquipmentRepository,
+    equipmentRepository,
+} from "../repositories/equipment.repository.js";
+import {
+    MaintenanceRequestRepository,
+    maintenanceRequestRepository,
+} from "../repositories/maintenanceRequest.repository.js";
 import type {
     CreateMaintenanceRequestInput,
     UpdateMaintenanceRequestInput,
@@ -18,108 +24,96 @@ export class MaintenanceRequestService {
         private readonly equipmentRepo: EquipmentRepository = equipmentRepository,
         private readonly maintenanceRequestRepo: MaintenanceRequestRepository = maintenanceRequestRepository,
     ) { }
-    findAll(query?: MaintenanceRequestListQuery): {
+
+    async findAll(query: MaintenanceRequestListQuery = {
+        page: 1,
+        limit: 20,
+        sortBy: "createdAt",
+        sortOrder: "asc",
+    }): Promise<{
         data: MaintenanceRequest[];
         meta: { total: number; page: number; limit: number };
-    } {
-        const options = query ?? {
-            page: 1,
-            limit: 20,
-            sortBy: "createdAt" as const,
-            sortOrder: "asc" as const,
-        };
-        let items = this.maintenanceRequestRepo.findAll();
-
-        if (options.status) items = items.filter((item) => item.status === options.status);
-        if (options.priority) items = items.filter((item) => item.priority === options.priority);
-        if (options.equipmentId) items = items.filter((item) => item.equipmentId === options.equipmentId);
-        if (options.createdFrom) items = items.filter((item) => item.createdAt >= options.createdFrom!);
-        if (options.createdTo) items = items.filter((item) => item.createdAt <= options.createdTo!);
-        if (options.plannedFrom) items = items.filter((item) => item.plannedAt !== undefined && item.plannedAt >= options.plannedFrom!);
-        if (options.plannedTo) items = items.filter((item) => item.plannedAt !== undefined && item.plannedAt <= options.plannedTo!);
-
-        const direction = options.sortOrder === "asc" ? 1 : -1;
-        items.sort((left, right) => {
-            const leftValue = left[options.sortBy] ?? "";
-            const rightValue = right[options.sortBy] ?? "";
-            return String(leftValue).localeCompare(String(rightValue)) * direction;
-        });
-
-        const total = items.length;
-        const start = (options.page - 1) * options.limit;
-
+    }> {
+        const result = await this.maintenanceRequestRepo.findAll(query);
         return {
-            data: items.slice(start, start + options.limit),
-            meta: { total, page: options.page, limit: options.limit },
+            data: result.rows,
+            meta: { total: result.count, page: query.page, limit: query.limit },
         };
     }
 
-    findById(id: string): MaintenanceRequest {
-        const maintenanceRequest = this.maintenanceRequestRepo.findById(id);
-
-        if (!maintenanceRequest) {
+    async findById(id: string): Promise<MaintenanceRequest> {
+        const request = await this.maintenanceRequestRepo.findById(id);
+        if (!request) {
             throw new NotFoundError("Maintenance request not found");
         }
-
-        return maintenanceRequest;
+        return request;
     }
 
-
-    create(input: CreateMaintenanceRequestInput): MaintenanceRequest {
-        const equipment = this.equipmentRepo.findById(input.equipmentId);
-
+    async create(input: CreateMaintenanceRequestInput): Promise<MaintenanceRequest> {
+        const equipment = await this.equipmentRepo.findById(input.equipmentId);
         if (!equipment) {
             throw new NotFoundError("Equipment not found");
         }
 
-        const now = new Date().toISOString();
-
         return this.maintenanceRequestRepo.create({
-            id: randomUUID(),
             equipmentId: equipment.id,
             title: input.title,
             ...(input.description === undefined
                 ? {}
                 : { description: input.description }),
             priority: input.priority,
-            status: "new",
             ...(input.plannedAt === undefined
                 ? {}
-                : { plannedAt: input.plannedAt }),
-            createdAt: now,
-            updatedAt: now,
+                : { plannedAt: new Date(input.plannedAt) }),
         });
     }
 
-    findByEquipmentId(equipmentId: string): MaintenanceRequest[] {
-        const equipment = this.equipmentRepo.findById(equipmentId);
-
+    async findByEquipmentId(
+        equipmentId: string,
+        query: MaintenanceRequestListQuery,
+    ): Promise<{
+        data: MaintenanceRequest[];
+        meta: { total: number; page: number; limit: number };
+    }> {
+        const equipment = await this.equipmentRepo.findById(equipmentId);
         if (!equipment) {
             throw new NotFoundError("Equipment not found");
         }
 
-        return this.maintenanceRequestRepo.findByEquipmentId(equipmentId);
+        const result = await this.maintenanceRequestRepo.findAll({
+            ...query,
+            equipmentId,
+        });
+        return {
+            data: result.rows,
+            meta: { total: result.count, page: query.page, limit: query.limit },
+        };
     }
 
-    update(id: string, input: UpdateMaintenanceRequestInput): MaintenanceRequest {
-        this.findById(id);
-        const updated = this.maintenanceRequestRepo.update(id, {
-            ...input,
-            updatedAt: new Date().toISOString(),
+    async update(
+        id: string,
+        input: UpdateMaintenanceRequestInput,
+    ): Promise<MaintenanceRequest> {
+        await this.findById(id);
+        const { plannedAt, ...changes } = input;
+        const updated = await this.maintenanceRequestRepo.update(id, {
+            ...changes,
+            ...(plannedAt === undefined
+                ? {}
+                : { plannedAt: new Date(plannedAt) }),
         });
 
         if (!updated) {
             throw new NotFoundError("Maintenance request not found");
         }
-
         return updated;
     }
 
-    updateStatus(
+    async updateStatus(
         id: string,
         input: UpdateMaintenanceRequestStatusInput,
-    ): MaintenanceRequest {
-        const current = this.findById(id);
+    ): Promise<MaintenanceRequest> {
+        const current = await this.findById(id);
         const allowedTransitions: Record<
             MaintenanceRequest["status"],
             MaintenanceRequest["status"][]
@@ -134,27 +128,29 @@ export class MaintenanceRequestService {
             throw new ConflictError("Invalid maintenance request status transition");
         }
 
-        const updated = this.maintenanceRequestRepo.update(id, {
+        const updated = await this.maintenanceRequestRepo.update(id, {
             status: input.status,
-            updatedAt: new Date().toISOString(),
         });
-
         if (!updated) {
             throw new NotFoundError("Maintenance request not found");
         }
-
         return updated;
     }
 
-    delete(id: string): MaintenanceRequest {
-        this.findById(id);
-        const deletedRequest = this.maintenanceRequestRepo.delete(id);
-
-        if (!deletedRequest) {
-            throw new NotFoundError("Maintenance request not found");
+    async delete(id: string): Promise<MaintenanceRequest> {
+        await this.findById(id);
+        try {
+            const deletedRequest = await this.maintenanceRequestRepo.delete(id);
+            if (!deletedRequest) {
+                throw new NotFoundError("Maintenance request not found");
+            }
+            return deletedRequest;
+        } catch (error) {
+            if (error instanceof ForeignKeyConstraintError) {
+                throw new ConflictError("Maintenance request has immutable status history");
+            }
+            throw error;
         }
-
-        return deletedRequest;
     }
 }
 

@@ -1,9 +1,10 @@
 # CaseLab Maintenance API
 
 REST API на Express/TypeScript для учёта оборудования производственной площадки и
-заявок на техническое обслуживание. PostgreSQL используется для проверки
-доступности; миграционный контур настроен для последующего переноса данных из
-in-memory-репозиториев. Эндпоинт прогноза использует Open-Meteo.
+заявок на техническое обслуживание. Оборудование и заявки хранятся в PostgreSQL
+через Sequelize; схема управляется миграциями, связанные данные загружаются
+через ассоциации моделей. Эндпоинт прогноза использует координаты площадки и
+Open-Meteo.
 
 ## Требования
 
@@ -96,6 +97,15 @@ npm start
 
 У списков доступны `page`, `limit` (до 100), `sortBy`, `sortOrder`, а также
 ресурсные фильтры: `status`, `type`, `priority`, `equipmentId` и диапазоны дат.
+Вложенный список `/equipment/:id/requests` поддерживает те же фильтры и
+пагинацию и возвращает `meta`. Фильтры, сортировка, подсчёт и пагинация
+выполняются запросами к PostgreSQL; `offset` ограничен значением 1 000 000.
+
+**Изменение входного контракта оборудования:** `POST /equipment` теперь
+требует `siteId`; координаты берутся из связанной площадки. Поле `location`
+сохраняется в ответе карточки, но не принимается на запись. `PATCH /equipment`
+принимает `siteId` для смены площадки. Получить существующий `siteId` можно
+из списка/карточки оборудования или из таблицы `sites`.
 
 ## Модель данных
 
@@ -136,14 +146,24 @@ erDiagram
 ```json
 {
   "id": "uuid",
+  "siteId": "uuid",
   "name": "North Wind Turbine",
   "type": "turbine",
   "serialNumber": "WT-001",
   "location": { "lat": 55.75, "lon": 37.62 },
   "status": "operational",
-  "installedAt": "2024-01-15T10:00:00.000Z"
+  "installedAt": "2024-01-15T10:00:00.000Z",
+  "passport": {
+    "manufacturer": "Vestas",
+    "model": "V150",
+    "ratedPowerKw": 4200,
+    "lastCalibrationAt": "2025-01-10"
+  }
 }
 ```
+
+В теле `POST /equipment` и `PATCH /equipment` используйте `siteId`, а не
+`location`; объект `location` в ответе формируется из координат площадки.
 
 `type`: `turbine | inverter | sensor | substation`.  
 `status`: `operational | maintenance | fault | decommissioned`. Имя содержит
@@ -162,7 +182,9 @@ erDiagram
   "status": "new",
   "plannedAt": "2030-06-15T09:00:00.000Z",
   "createdAt": "2026-09-22T05:00:00.000Z",
-  "updatedAt": "2026-09-22T05:00:00.000Z"
+  "updatedAt": "2026-09-22T05:00:00.000Z",
+  "author": "system",
+  "assignees": []
 }
 ```
 
@@ -211,13 +233,13 @@ in_progress -> rejected
 ```bash
 curl -X POST http://localhost:3000/api/equipment \
   -H "Content-Type: application/json" \
-  -d '{"name":"North Wind Turbine","type":"turbine","serialNumber":"WT-001","location":{"lat":55.75,"lon":37.62},"status":"operational","installedAt":"2024-01-15T10:00:00.000Z"}'
+  -d '{"siteId":"10000000-0000-4000-8000-000000000001","name":"North Wind Turbine","type":"turbine","serialNumber":"WT-001","status":"operational","installedAt":"2024-01-15T10:00:00.000Z"}'
 ```
 
 Ответ `201`:
 
 ```json
-{ "success": true, "data": { "id": "generated-uuid", "name": "North Wind Turbine", "type": "turbine", "serialNumber": "WT-001", "location": { "lat": 55.75, "lon": 37.62 }, "status": "operational", "installedAt": "2024-01-15T10:00:00.000Z" } }
+{ "success": true, "data": { "id": "generated-uuid", "siteId": "10000000-0000-4000-8000-000000000001", "name": "North Wind Turbine", "type": "turbine", "serialNumber": "WT-001", "location": { "lat": 56.123456, "lon": 37.654321 }, "status": "operational", "installedAt": "2024-01-15T00:00:00.000Z", "passport": null } }
 ```
 
 Создание заявки:
@@ -235,7 +257,7 @@ curl http://localhost:3000/api/equipment/00000000-0000-4000-8000-000000000000
 # 404: { "error": { "code": "NOT_FOUND", "message": "Equipment not found", "details": [], "requestId": "..." } }
 
 curl -X POST http://localhost:3000/api/equipment \
-  -H "Content-Type: application/json" -d '{"name":"x"}'
+  -H "Content-Type: application/json" -d '{"siteId":"00000000-0000-4000-8000-000000000000","name":"x"}'
 # 400: error.code = "VALIDATION_ERROR"
 
 curl -X PATCH http://localhost:3000/api/requests/<done-request-id>/status \

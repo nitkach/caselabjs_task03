@@ -94,8 +94,8 @@ export class EquipmentEntity extends Model {
     declare status: EquipmentState;
 
     @AllowNull(false)
-    @Column({ type: DataType.DATEONLY, field: "installed_at" })
-    declare installedAt: string;
+    @Column({ type: DataType.DATE, field: "installed_at" })
+    declare installedAt: Date;
 
     declare createdAt: Date;
     declare updatedAt: Date;
@@ -293,6 +293,8 @@ export class TechnicianEntity extends Model {
         "requestId",
     )
     declare requests?: MaintenanceRequestEntity[];
+
+    declare RequestAssigneeEntity?: RequestAssigneeEntity;
 }
 
 @Table({

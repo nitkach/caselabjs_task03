@@ -1,65 +1,181 @@
+import { Op, type WhereOptions } from "sequelize";
+
 import type { MaintenanceRequest } from "../models/maintenanceRequest.model.js";
+import type { MaintenanceRequestListQuery } from "../schemas/list.schema.js";
+import {
+    MaintenanceRequestEntity,
+    RequestAssigneeEntity,
+    TechnicianEntity,
+} from "../models/entities/index.js";
+
+const requestAttributes = [
+    "id",
+    "equipmentId",
+    "title",
+    "description",
+    "priority",
+    "status",
+    "plannedAt",
+    "author",
+    "createdAt",
+    "updatedAt",
+] as const;
+
+const technicianAttributes = [
+    "id",
+    "fullName",
+    "specialization",
+    "employeeNumber",
+] as const;
+
+const sortColumns = {
+    createdAt: "createdAt",
+    updatedAt: "updatedAt",
+    plannedAt: "plannedAt",
+    priority: "priority",
+} as const;
+
+function toMaintenanceRequest(entity: MaintenanceRequestEntity): MaintenanceRequest {
+    return {
+        id: entity.id,
+        equipmentId: entity.equipmentId,
+        title: entity.title,
+        ...(entity.description === null ? {} : { description: entity.description }),
+        priority: entity.priority,
+        status: entity.status,
+        ...(entity.plannedAt === null
+            ? {}
+            : { plannedAt: entity.plannedAt.toISOString() }),
+        createdAt: entity.createdAt.toISOString(),
+        updatedAt: entity.updatedAt.toISOString(),
+        author: entity.author,
+        assignees: (entity.assignees ?? []).flatMap((technician) => {
+            const assignment = technician.RequestAssigneeEntity;
+            if (!assignment) return [];
+            return [{
+                id: technician.id,
+                fullName: technician.fullName,
+                specialization: technician.specialization,
+                employeeNumber: technician.employeeNumber,
+                role: assignment.role,
+                hours: Number(assignment.hours),
+            }];
+        }),
+    };
+}
+
+const requestIncludes = [
+    {
+        model: TechnicianEntity,
+        as: "assignees",
+        attributes: [...technicianAttributes],
+        through: {
+            model: RequestAssigneeEntity,
+            attributes: ["role", "hours"],
+        },
+        required: false,
+    },
+];
 
 export class MaintenanceRequestRepository {
-    private readonly maintenanceRequests = new Map<string, MaintenanceRequest>();
+    async findAll(query: MaintenanceRequestListQuery): Promise<{
+        rows: MaintenanceRequest[];
+        count: number;
+    }> {
+        const where: WhereOptions<MaintenanceRequestEntity> = {};
+        if (query.status) where.status = query.status;
+        if (query.priority) where.priority = query.priority;
+        if (query.equipmentId) where.equipmentId = query.equipmentId;
+        if (query.createdFrom || query.createdTo) {
+            const createdAt: { [Op.gte]?: Date; [Op.lte]?: Date } = {};
+            if (query.createdFrom) createdAt[Op.gte] = new Date(query.createdFrom);
+            if (query.createdTo) createdAt[Op.lte] = new Date(query.createdTo);
+            where.createdAt = createdAt;
+        }
+        if (query.plannedFrom || query.plannedTo) {
+            const plannedAt: { [Op.gte]?: Date; [Op.lte]?: Date } = {};
+            if (query.plannedFrom) plannedAt[Op.gte] = new Date(query.plannedFrom);
+            if (query.plannedTo) plannedAt[Op.lte] = new Date(query.plannedTo);
+            where.plannedAt = plannedAt;
+        }
 
-    findAll(): MaintenanceRequest[] {
-        return [...this.maintenanceRequests.values()];
+        const result = await MaintenanceRequestEntity.findAndCountAll({
+            attributes: [...requestAttributes],
+            include: requestIncludes,
+            where,
+            order: [[sortColumns[query.sortBy], query.sortOrder === "asc" ? "ASC" : "DESC"]],
+            limit: query.limit,
+            offset: (query.page - 1) * query.limit,
+            distinct: true,
+        });
+
+        return {
+            rows: result.rows.map(toMaintenanceRequest),
+            count: result.count,
+        };
     }
 
-    findById(id: string): MaintenanceRequest | undefined {
-        return this.maintenanceRequests.get(id);
+    async findById(id: string): Promise<MaintenanceRequest | undefined> {
+        const entity = await MaintenanceRequestEntity.findByPk(id, {
+            attributes: [...requestAttributes],
+            include: requestIncludes,
+        });
+        return entity ? toMaintenanceRequest(entity) : undefined;
     }
 
-    findByEquipmentId(equipmentId: string): MaintenanceRequest[] {
-        return [...this.maintenanceRequests.values()].filter(
-            (request) => request.equipmentId === equipmentId,
-        );
-    }
-
-    create(request: MaintenanceRequest): MaintenanceRequest {
-        this.maintenanceRequests.set(request.id, request);
+    async create(input: {
+        equipmentId: string;
+        title: string;
+        description?: string;
+        priority: MaintenanceRequest["priority"];
+        plannedAt?: Date;
+    }): Promise<MaintenanceRequest> {
+        const entity = await MaintenanceRequestEntity.create({
+            ...input,
+            status: "new",
+            author: "system",
+        });
+        const request = await this.findById(entity.id);
+        if (!request) {
+            throw new Error(`Created request ${entity.id} could not be reloaded`);
+        }
         return request;
     }
 
-    update(
+    async update(
         id: string,
-        changes: Partial<MaintenanceRequest>,
-    ): MaintenanceRequest | undefined {
-        const current = this.maintenanceRequests.get(id);
+        changes: Partial<Pick<
+            MaintenanceRequest,
+            "title" | "description" | "priority" | "status"
+        >> & { plannedAt?: Date | null },
+    ): Promise<MaintenanceRequest | undefined> {
+        const entity = await MaintenanceRequestEntity.findByPk(id);
+        if (!entity) return undefined;
 
-        if (!current) {
-            return undefined;
-        }
-
-        const updated = {
-            ...current,
-            ...changes,
-            id: current.id,
-            createdAt: current.createdAt,
-        };
-
-        this.maintenanceRequests.set(id, updated);
-        return updated;
+        await entity.update(changes);
+        return this.findById(id);
     }
 
-    hasOpenByEquipmentId(equipmentId: string): boolean {
-        return [...this.maintenanceRequests.values()].some(
-            (request) =>
-                request.equipmentId === equipmentId &&
-                (request.status === "new" || request.status === "in_progress"),
-        );
+    async hasOpenByEquipmentId(equipmentId: string): Promise<boolean> {
+        const count = await MaintenanceRequestEntity.count({
+            where: {
+                equipmentId,
+                status: { [Op.in]: ["new", "in_progress"] },
+            },
+        });
+        return count > 0;
     }
 
-    delete(id: string): MaintenanceRequest | undefined {
-        const current = this.maintenanceRequests.get(id);
+    async delete(id: string): Promise<MaintenanceRequest | undefined> {
+        const entity = await MaintenanceRequestEntity.findByPk(id, {
+            attributes: [...requestAttributes],
+            include: requestIncludes,
+        });
+        if (!entity) return undefined;
 
-        if (!current) {
-            return undefined;
-        }
-
-        this.maintenanceRequests.delete(id);
-        return current;
+        const request = toMaintenanceRequest(entity);
+        await entity.destroy();
+        return request;
     }
 }
 

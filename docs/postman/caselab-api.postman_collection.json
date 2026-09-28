@@ -21,6 +21,10 @@
         {
             "key": "requestId",
             "value": ""
+        },
+        {
+            "key": "siteId",
+            "value": "10000000-0000-4000-8000-000000000001"
         }
     ],
     "item": [
@@ -118,7 +122,7 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n  \"name\": \"North Wind Turbine\",\n  \"type\": \"turbine\",\n  \"serialNumber\": \"POSTMAN-EQ-001\",\n  \"location\": { \"lat\": 55.75, \"lon\": 37.62 },\n  \"status\": \"operational\",\n  \"installedAt\": \"2024-01-15T10:00:00.000Z\"\n}"
+                            "raw": "{\n  \"siteId\": \"{{siteId}}\",\n  \"name\": \"North Wind Turbine\",\n  \"type\": \"turbine\",\n  \"serialNumber\": \"POSTMAN-EQ-001\",\n  \"status\": \"operational\",\n  \"installedAt\": \"2024-01-15T10:00:00.000Z\"\n}"
                         },
                         "url": "{{baseUrl}}/api/equipment"
                     },
@@ -148,7 +152,7 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n  \"name\": \"Backup Inverter\",\n  \"type\": \"inverter\",\n  \"serialNumber\": \"POSTMAN-EQ-002\",\n  \"location\": { \"lat\": 55.76, \"lon\": 37.63 },\n  \"status\": \"maintenance\",\n  \"installedAt\": \"2024-02-20T10:00:00.000Z\"\n}"
+                            "raw": "{\n  \"siteId\": \"{{siteId}}\",\n  \"name\": \"Backup Inverter\",\n  \"type\": \"inverter\",\n  \"serialNumber\": \"POSTMAN-EQ-002\",\n  \"status\": \"maintenance\",\n  \"installedAt\": \"2024-02-20T10:00:00.000Z\"\n}"
                         },
                         "url": "{{baseUrl}}/api/equipment"
                     },
@@ -262,7 +266,7 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{ \"name\": \"x\", \"type\": \"unknown\", \"serialNumber\": \"\", \"location\": { \"lat\": 999, \"lon\": 0 }, \"status\": \"broken\", \"installedAt\": \"2099-01-01T00:00:00.000Z\" }"
+                            "raw": "{ \"siteId\": \"{{siteId}}\", \"name\": \"x\", \"type\": \"unknown\", \"serialNumber\": \"\", \"status\": \"broken\", \"installedAt\": \"2099-01-01T00:00:00.000Z\" }"
                         },
                         "url": "{{baseUrl}}/api/equipment"
                     },
@@ -290,7 +294,7 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n  \"name\": \"Duplicate Serial Equipment\",\n  \"type\": \"sensor\",\n  \"serialNumber\": \"POSTMAN-EQ-001\",\n  \"location\": { \"lat\": 55.75, \"lon\": 37.62 },\n  \"status\": \"operational\",\n  \"installedAt\": \"2024-01-15T10:00:00.000Z\"\n}"
+                            "raw": "{\n  \"siteId\": \"{{siteId}}\",\n  \"name\": \"Duplicate Serial Equipment\",\n  \"type\": \"sensor\",\n  \"serialNumber\": \"POSTMAN-EQ-001\",\n  \"status\": \"operational\",\n  \"installedAt\": \"2024-01-15T10:00:00.000Z\"\n}"
                         },
                         "url": "{{baseUrl}}/api/equipment"
                     },

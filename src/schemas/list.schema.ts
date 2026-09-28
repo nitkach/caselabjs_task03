@@ -2,6 +2,7 @@ import { z } from "zod";
 
 const positiveInt = z.coerce.number().int().min(1);
 const sortOrderSchema = z.enum(["asc", "desc"]).default("asc");
+const maximumOffset = 1_000_000;
 
 export const equipmentListQuerySchema = z.object({
     status: z.enum([
@@ -22,7 +23,10 @@ export const equipmentListQuerySchema = z.object({
     sortOrder: sortOrderSchema,
     page: positiveInt.default(1),
     limit: positiveInt.max(100).default(20),
-});
+}).refine(
+    ({ page, limit }) => (page - 1) * limit <= maximumOffset,
+    { path: ["page"], message: `Offset must not exceed ${maximumOffset}` },
+);
 
 export const maintenanceRequestListQuerySchema = z.object({
     status: z.enum(["new", "in_progress", "done", "rejected"]).optional(),
@@ -36,10 +40,12 @@ export const maintenanceRequestListQuerySchema = z.object({
     sortOrder: sortOrderSchema,
     page: positiveInt.default(1),
     limit: positiveInt.max(100).default(20),
-});
+}).refine(
+    ({ page, limit }) => (page - 1) * limit <= maximumOffset,
+    { path: ["page"], message: `Offset must not exceed ${maximumOffset}` },
+);
 
 export type EquipmentListQuery = z.infer<typeof equipmentListQuerySchema>;
 export type MaintenanceRequestListQuery = z.infer<
     typeof maintenanceRequestListQuerySchema
 >;
-

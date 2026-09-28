@@ -22,12 +22,19 @@ export interface Location {
 
 export interface Equipment {
     id: string;
+    siteId: string;
     name: string;
     type: EquipmentType;
     serialNumber: string;
     location: Location;
     status: EquipmentStatus;
     installedAt: string;
+    passport?: {
+        manufacturer: string;
+        model: string;
+        ratedPowerKw: number;
+        lastCalibrationAt: string | null;
+    } | null;
 }
 
 export type CreateEquipmentInput = ValidatedCreateEquipmentInput;
