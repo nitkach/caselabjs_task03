@@ -43,10 +43,23 @@ export const updateMaintenanceRequestSchema = z.object({
 
 export const updateMaintenanceRequestStatusSchema = z.object({
     status: statusSchema,
+    changedBy: z.string().trim().min(1).max(120).optional(),
+    comment: z.string().trim().max(2000).optional(),
+});
+
+export const replaceRequestAssigneesSchema = z.object({
+    assignees: z.array(z.object({
+        technicianId: z.uuid(),
+        role: z.enum(["lead", "member"]),
+        hours: z.number().positive().max(9999.99),
+    })).max(50),
 });
 
 export type CreateMaintenanceRequestInput = z.infer<typeof createMaintenanceRequestSchema>;
 export type UpdateMaintenanceRequestInput = z.infer<typeof updateMaintenanceRequestSchema>;
 export type UpdateMaintenanceRequestStatusInput = z.infer<
     typeof updateMaintenanceRequestStatusSchema
+>;
+export type ReplaceRequestAssigneesInput = z.infer<
+    typeof replaceRequestAssigneesSchema
 >;

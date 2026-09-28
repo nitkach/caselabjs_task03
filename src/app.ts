@@ -11,6 +11,7 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import { notFoundHandler } from "./middleware/notFoundHandler.js";
 import { equipmentRouter } from "./routes/equipment.routes.js";
 import { maintenanceRequestRouter } from "./routes/maintenanceRequest.routes.js";
+import { reportRouter } from "./routes/report.routes.js";
 
 export const app = express();
 
@@ -81,6 +82,7 @@ app.get("/api/health", async (_req, res) => {
 
 app.use("/api", equipmentRouter);
 app.use("/api", maintenanceRequestRouter);
+app.use("/api", reportRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

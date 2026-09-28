@@ -7,6 +7,7 @@ export type AppErrorCode =
     | "VALIDATION_ERROR"
     | "NOT_FOUND"
     | "CONFLICT"
+    | "UNPROCESSABLE_ENTITY"
     | "EXTERNAL_SERVICE_ERROR"
     | "INTERNAL_SERVER_ERROR";
 
@@ -52,6 +53,13 @@ export class ConflictError extends AppError {
     constructor(message = "Conflict") {
         super(409, message, "CONFLICT");
         this.name = "ConflictError";
+    }
+}
+
+export class UnprocessableEntityError extends AppError {
+    constructor(message = "The request cannot be processed") {
+        super(422, message, "UNPROCESSABLE_ENTITY");
+        this.name = "UnprocessableEntityError";
     }
 }
 

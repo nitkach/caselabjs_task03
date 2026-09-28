@@ -25,6 +25,10 @@
         {
             "key": "siteId",
             "value": "10000000-0000-4000-8000-000000000001"
+        },
+        {
+            "key": "userId",
+            "value": "50000000-0000-4000-8000-000000000002"
         }
     ],
     "item": [
@@ -330,7 +334,7 @@
                     ]
                 },
                 {
-                    "name": "Delete equipment",
+                    "name": "Delete equipment (204 or 409 when requests still reference it)",
                     "request": {
                         "method": "DELETE",
                         "header": [],
@@ -342,7 +346,7 @@
                             "script": {
                                 "type": "text/javascript",
                                 "exec": [
-                                    "pm.test('Status is 200 or 409 if open requests exist', function () { pm.expect([200, 409]).to.include(pm.response.code); });"
+                                    "pm.test('Status is 204 or 409 when related requests exist', function () { pm.expect([204, 409]).to.include(pm.response.code); });"
                                 ]
                             }
                         }
@@ -449,7 +453,7 @@
                     ]
                 },
                 {
-                    "name": "Change status to in_progress",
+                    "name": "Reject in_progress without team (409)",
                     "request": {
                         "method": "PATCH",
                         "header": [
@@ -461,6 +465,147 @@
                         "body": {
                             "mode": "raw",
                             "raw": "{ \"status\": \"in_progress\" }"
+                        },
+                        "url": "{{baseUrl}}/api/requests/{{requestId}}/status"
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status is 409', function () { pm.response.to.have.status(409); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Reject team without lead (422)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{ \"assignees\": [{ \"technicianId\": \"50000000-0000-4000-8000-000000000001\", \"role\": \"member\", \"hours\": 2 }] }"
+                        },
+                        "url": "{{baseUrl}}/api/requests/{{requestId}}/assignees"
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status is 422', function () { pm.response.to.have.status(422); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Reject unknown technician (404)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{ \"assignees\": [{ \"technicianId\": \"00000000-0000-4000-8000-000000000000\", \"role\": \"lead\", \"hours\": 2 }] }"
+                        },
+                        "url": "{{baseUrl}}/api/requests/{{requestId}}/assignees"
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status is 404', function () { pm.response.to.have.status(404); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Reject duplicate technician (409)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{ \"assignees\": [{ \"technicianId\": \"50000000-0000-4000-8000-000000000001\", \"role\": \"lead\", \"hours\": 2 }, { \"technicianId\": \"50000000-0000-4000-8000-000000000001\", \"role\": \"member\", \"hours\": 3 }] }"
+                        },
+                        "url": "{{baseUrl}}/api/requests/{{requestId}}/assignees"
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status is 409', function () { pm.response.to.have.status(409); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Assign team (one lead and one member)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{ \"assignees\": [{ \"technicianId\": \"50000000-0000-4000-8000-000000000001\", \"role\": \"lead\", \"hours\": 4 }, { \"technicianId\": \"50000000-0000-4000-8000-000000000002\", \"role\": \"member\", \"hours\": 3 }] }"
+                        },
+                        "url": "{{baseUrl}}/api/requests/{{requestId}}/assignees"
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                                    "pm.test('Exactly one team lead is returned', function () { pm.expect(pm.response.json().data.assignees.filter(function (person) { return person.role === 'lead'; })).to.have.lengthOf(1); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Change status to in_progress",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{ \"status\": \"in_progress\", \"changedBy\": \"postman-operator\", \"comment\": \"Work assigned and ready to begin.\" }"
                         },
                         "url": "{{baseUrl}}/api/requests/{{requestId}}/status"
                     },
@@ -499,6 +644,44 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('Status is 200', function () { pm.response.to.have.status(200); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Get request status history",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": "{{baseUrl}}/api/requests/{{requestId}}/history"
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status is 200 and history is returned', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().data).to.be.an('array'); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Remove a member from the team",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [],
+                        "url": "{{baseUrl}}/api/requests/{{requestId}}/assignees/{{userId}}"
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status is 204', function () { pm.response.to.have.status(204); });"
                                 ]
                             }
                         }
@@ -580,7 +763,7 @@
                     ]
                 },
                 {
-                    "name": "Delete maintenance request",
+                    "name": "Deletion is blocked when immutable history exists (409)",
                     "request": {
                         "method": "DELETE",
                         "header": [],
@@ -592,7 +775,69 @@
                             "script": {
                                 "type": "text/javascript",
                                 "exec": [
-                                    "pm.test('Status is 200', function () { pm.response.to.have.status(200); });"
+                                    "pm.test('Status is 409', function () { pm.response.to.have.status(409); });"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "Reports",
+            "item": [
+                {
+                    "name": "Site summary",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": "{{baseUrl}}/api/sites/{{siteId}}/summary"
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Site summary returns grouped counts', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().data.requestCountsByStatus).to.be.an('object'); pm.expect(pm.response.json().data.requestCountsByPriority).to.be.an('object'); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Equipment load report",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": "{{baseUrl}}/api/reports/equipment-load?from=2025-01-01T00%3A00%3A00.000Z&to=2030-01-01T00%3A00%3A00.000Z&minRequests=1"
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Load report returns equipment aggregates', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().data).to.be.an('array'); if (pm.response.json().data.length) { pm.expect(pm.response.json().data[0]).to.have.property('plannedLaborHours'); pm.expect(pm.response.json().data[0]).to.have.property('lastMaintenanceAt'); } });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Invalid equipment load period (400)",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": "{{baseUrl}}/api/reports/equipment-load?from=2030-01-01T00%3A00%3A00.000Z&to=2020-01-01T00%3A00%3A00.000Z&minRequests=1"
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status is 400', function () { pm.response.to.have.status(400); });"
                                 ]
                             }
                         }
