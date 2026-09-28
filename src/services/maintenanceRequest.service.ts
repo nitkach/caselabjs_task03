@@ -245,6 +245,11 @@ export class MaintenanceRequestService {
                     requestId,
                     transaction,
                 );
+                if (request.status === "in_progress" && assignmentCount === 1) {
+                    throw new ConflictError(
+                        "An in-progress request must retain at least one assigned technician",
+                    );
+                }
                 if (assignmentCount > 1) {
                     throw new UnprocessableEntityError(
                         "The lead cannot be removed while other technicians remain assigned",
