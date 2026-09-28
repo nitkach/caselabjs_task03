@@ -14,17 +14,14 @@ const equipmentStatusSchema = z.enum([
     "decommissioned",
 ]);
 
-const locationSchema = z.object({
-    lat: z.number().min(-90).max(90),
-    lon: z.number().min(-180).max(180),
-});
-
 const installedAtSchema = z.iso.datetime().refine(
     (value) => new Date(value).getTime() <= Date.now(),
     "Дата установки не может быть в будущем",
 );
 
 export const createEquipmentSchema = z.object({
+    siteId: z.uuid(),
+
     name: z
         .string()
         .trim()
@@ -37,8 +34,6 @@ export const createEquipmentSchema = z.object({
         .string()
         .trim()
         .min(1, "Серийный номер обязателен"),
-
-    location: locationSchema,
 
     status: equipmentStatusSchema,
 

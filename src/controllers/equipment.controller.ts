@@ -4,10 +4,13 @@ import type { CreateEquipmentInput, UpdateEquipmentInput } from "../models/equip
 import { equipmentService } from "../services/equipment.service.js";
 import { maintenanceRequestService } from "../services/maintenanceRequest.service.js";
 import { weatherService } from "../services/weather.service.js";
-import { equipmentListQuerySchema } from "../schemas/list.schema.js";
+import {
+    equipmentListQuerySchema,
+    maintenanceRequestListQuerySchema,
+} from "../schemas/list.schema.js";
 import { ValidationError } from "../errors/appError.js";
 
-export function listEquipment(req: Request, res: Response): void {
+export async function listEquipment(req: Request, res: Response): Promise<void> {
     const parsed = equipmentListQuerySchema.safeParse(req.query);
     if (!parsed.success) {
         throw new ValidationError("Invalid equipment list query");
@@ -15,34 +18,35 @@ export function listEquipment(req: Request, res: Response): void {
 
     res.json({
         success: true,
-        ...equipmentService.findAll(parsed.data),
+        ...await equipmentService.findAll(parsed.data),
     });
 };
 
 export function createEquipment(
     req: Request<Record<string, never>, unknown, CreateEquipmentInput>,
     res: Response<unknown>
-): void {
-    const equipment = equipmentService.create(req.body);
-
-    res.status(201).json({
-        success: true,
-        data: equipment,
+): Promise<void> {
+    return equipmentService.create(req.body).then((equipment) => {
+        res.status(201).json({
+            success: true,
+            data: equipment,
+        });
     });
+
 }
 
-export function getEquipment(req: Request<{ id: string }>, res: Response<unknown>): void {
+export async function getEquipment(req: Request<{ id: string }>, res: Response<unknown>): Promise<void> {
     res.json({
         success: true,
-        data: equipmentService.findById(req.params.id),
+        data: await equipmentService.findById(req.params.id),
     });
 }
 
-export function patchEquipment(
+export async function patchEquipment(
     req: Request<{ id: string }, unknown, UpdateEquipmentInput>,
     res: Response<unknown>
-): void {
-    const equipment = equipmentService.update(req.params.id, req.body);
+): Promise<void> {
+    const equipment = await equipmentService.update(req.params.id, req.body);
 
     res.status(200).json({
         success: true,
@@ -50,21 +54,26 @@ export function patchEquipment(
     });
 }
 
-export function deleteEquipment(req: Request<{ id: string }>, res: Response<unknown>): void {
-    const equipment = equipmentService.delete(req.params.id);
+export async function deleteEquipment(req: Request<{ id: string }>, res: Response<unknown>): Promise<void> {
+    await equipmentService.delete(req.params.id);
 
-    res.status(200).json({
-        success: true,
-        data: equipment,
-    });
+    res.sendStatus(204);
 }
 
-export function getMaintenanceRequestsByEquipmentId(req: Request<{ id: string }>, res: Response<unknown>): void {
-    const maintenanceRequests = maintenanceRequestService.findByEquipmentId(req.params.id);
+export async function getMaintenanceRequestsByEquipmentId(req: Request<{ id: string }>, res: Response<unknown>): Promise<void> {
+    const parsed = maintenanceRequestListQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+        throw new ValidationError("Invalid request list query");
+    }
+
+    const maintenanceRequests = await maintenanceRequestService.findByEquipmentId(
+        req.params.id,
+        parsed.data,
+    );
 
     res.status(200).json({
         success: true,
-        data: maintenanceRequests,
+        ...maintenanceRequests,
     })
 }
 

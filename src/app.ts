@@ -4,12 +4,14 @@ import cors from "cors";
 import rateLimit from "express-rate-limit";
 
 import { env } from "./config/env.js";
+import { sequelize } from "./config/database.js";
 import { requestLogger } from "./middleware/requestLogger.js";
 import { requestId } from "./middleware/requestId.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { notFoundHandler } from "./middleware/notFoundHandler.js";
 import { equipmentRouter } from "./routes/equipment.routes.js";
 import { maintenanceRequestRouter } from "./routes/maintenanceRequest.routes.js";
+import { reportRouter } from "./routes/report.routes.js";
 
 export const app = express();
 
@@ -68,15 +70,19 @@ app.use(requestLogger);
 app.use(express.json({ limit: env.jsonBodyLimit }));
 app.use(express.urlencoded({ extended: false, limit: env.urlEncodedBodyLimit }));
 
-app.get("/api/health", (_req, res) => {
-    res.json({
-        success: true,
-        status: "ok",
-    });
+app.get("/api/health", async (_req, res) => {
+    try {
+        await sequelize.authenticate();
+        res.json({ status: "ok", database: "up" });
+    } catch (error) {
+        console.error("Database health check failed", error);
+        res.status(503).json({ status: "error", database: "down" });
+    }
 });
 
 app.use("/api", equipmentRouter);
 app.use("/api", maintenanceRequestRouter);
+app.use("/api", reportRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

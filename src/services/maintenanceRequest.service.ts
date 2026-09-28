@@ -1,160 +1,292 @@
-import { randomUUID } from "node:crypto";
+import { ForeignKeyConstraintError } from "sequelize";
 
+import { sequelize } from "../config/database.js";
 import type {
     MaintenanceRequest,
 } from "../models/maintenanceRequest.model.js";
-import { EquipmentRepository, equipmentRepository } from "../repositories/equipment.repository.js";
-import { MaintenanceRequestRepository, maintenanceRequestRepository } from "../repositories/maintenanceRequest.repository.js";
+import {
+    EquipmentRepository,
+    equipmentRepository,
+} from "../repositories/equipment.repository.js";
+import {
+    MaintenanceRequestRepository,
+    maintenanceRequestRepository,
+} from "../repositories/maintenanceRequest.repository.js";
 import type {
     CreateMaintenanceRequestInput,
     UpdateMaintenanceRequestInput,
     UpdateMaintenanceRequestStatusInput,
+    ReplaceRequestAssigneesInput,
 } from "../schemas/maintenanceRequest.schema.js";
 import type { MaintenanceRequestListQuery } from "../schemas/list.schema.js";
-import { ConflictError, NotFoundError } from "../errors/appError.js";
+import {
+    ConflictError,
+    NotFoundError,
+    UnprocessableEntityError,
+} from "../errors/appError.js";
 
 export class MaintenanceRequestService {
     constructor(
         private readonly equipmentRepo: EquipmentRepository = equipmentRepository,
         private readonly maintenanceRequestRepo: MaintenanceRequestRepository = maintenanceRequestRepository,
     ) { }
-    findAll(query?: MaintenanceRequestListQuery): {
+
+    async findAll(query: MaintenanceRequestListQuery = {
+        page: 1,
+        limit: 20,
+        sortBy: "createdAt",
+        sortOrder: "asc",
+    }): Promise<{
         data: MaintenanceRequest[];
         meta: { total: number; page: number; limit: number };
-    } {
-        const options = query ?? {
-            page: 1,
-            limit: 20,
-            sortBy: "createdAt" as const,
-            sortOrder: "asc" as const,
-        };
-        let items = this.maintenanceRequestRepo.findAll();
-
-        if (options.status) items = items.filter((item) => item.status === options.status);
-        if (options.priority) items = items.filter((item) => item.priority === options.priority);
-        if (options.equipmentId) items = items.filter((item) => item.equipmentId === options.equipmentId);
-        if (options.createdFrom) items = items.filter((item) => item.createdAt >= options.createdFrom!);
-        if (options.createdTo) items = items.filter((item) => item.createdAt <= options.createdTo!);
-        if (options.plannedFrom) items = items.filter((item) => item.plannedAt !== undefined && item.plannedAt >= options.plannedFrom!);
-        if (options.plannedTo) items = items.filter((item) => item.plannedAt !== undefined && item.plannedAt <= options.plannedTo!);
-
-        const direction = options.sortOrder === "asc" ? 1 : -1;
-        items.sort((left, right) => {
-            const leftValue = left[options.sortBy] ?? "";
-            const rightValue = right[options.sortBy] ?? "";
-            return String(leftValue).localeCompare(String(rightValue)) * direction;
-        });
-
-        const total = items.length;
-        const start = (options.page - 1) * options.limit;
-
+    }> {
+        const result = await this.maintenanceRequestRepo.findAll(query);
         return {
-            data: items.slice(start, start + options.limit),
-            meta: { total, page: options.page, limit: options.limit },
+            data: result.rows,
+            meta: { total: result.count, page: query.page, limit: query.limit },
         };
     }
 
-    findById(id: string): MaintenanceRequest {
-        const maintenanceRequest = this.maintenanceRequestRepo.findById(id);
-
-        if (!maintenanceRequest) {
+    async findById(id: string): Promise<MaintenanceRequest> {
+        const request = await this.maintenanceRequestRepo.findById(id);
+        if (!request) {
             throw new NotFoundError("Maintenance request not found");
         }
-
-        return maintenanceRequest;
+        return request;
     }
 
-
-    create(input: CreateMaintenanceRequestInput): MaintenanceRequest {
-        const equipment = this.equipmentRepo.findById(input.equipmentId);
-
+    async create(input: CreateMaintenanceRequestInput): Promise<MaintenanceRequest> {
+        const equipment = await this.equipmentRepo.findById(input.equipmentId);
         if (!equipment) {
             throw new NotFoundError("Equipment not found");
         }
 
-        const now = new Date().toISOString();
-
-        return this.maintenanceRequestRepo.create({
-            id: randomUUID(),
-            equipmentId: equipment.id,
-            title: input.title,
-            ...(input.description === undefined
-                ? {}
-                : { description: input.description }),
-            priority: input.priority,
-            status: "new",
-            ...(input.plannedAt === undefined
-                ? {}
-                : { plannedAt: input.plannedAt }),
-            createdAt: now,
-            updatedAt: now,
+        return sequelize.transaction(async (transaction) => {
+            const created = await this.maintenanceRequestRepo.create({
+                equipmentId: equipment.id,
+                title: input.title,
+                ...(input.description === undefined
+                    ? {}
+                    : { description: input.description }),
+                priority: input.priority,
+                ...(input.plannedAt === undefined
+                    ? {}
+                    : { plannedAt: new Date(input.plannedAt) }),
+            }, transaction);
+            return this.maintenanceRequestRepo.reloadInTransaction(
+                created.id,
+                transaction,
+            );
         });
     }
 
-    findByEquipmentId(equipmentId: string): MaintenanceRequest[] {
-        const equipment = this.equipmentRepo.findById(equipmentId);
-
+    async findByEquipmentId(
+        equipmentId: string,
+        query: MaintenanceRequestListQuery,
+    ): Promise<{
+        data: MaintenanceRequest[];
+        meta: { total: number; page: number; limit: number };
+    }> {
+        const equipment = await this.equipmentRepo.findById(equipmentId);
         if (!equipment) {
             throw new NotFoundError("Equipment not found");
         }
 
-        return this.maintenanceRequestRepo.findByEquipmentId(equipmentId);
+        const result = await this.maintenanceRequestRepo.findAll({
+            ...query,
+            equipmentId,
+        });
+        return {
+            data: result.rows,
+            meta: { total: result.count, page: query.page, limit: query.limit },
+        };
     }
 
-    update(id: string, input: UpdateMaintenanceRequestInput): MaintenanceRequest {
-        this.findById(id);
-        const updated = this.maintenanceRequestRepo.update(id, {
-            ...input,
-            updatedAt: new Date().toISOString(),
+    async update(
+        id: string,
+        input: UpdateMaintenanceRequestInput,
+    ): Promise<MaintenanceRequest> {
+        await this.findById(id);
+        const { plannedAt, ...changes } = input;
+        const updated = await this.maintenanceRequestRepo.update(id, {
+            ...changes,
+            ...(plannedAt === undefined
+                ? {}
+                : { plannedAt: new Date(plannedAt) }),
         });
 
         if (!updated) {
             throw new NotFoundError("Maintenance request not found");
         }
-
         return updated;
     }
 
-    updateStatus(
+    async updateStatus(
         id: string,
         input: UpdateMaintenanceRequestStatusInput,
-    ): MaintenanceRequest {
-        const current = this.findById(id);
-        const allowedTransitions: Record<
-            MaintenanceRequest["status"],
-            MaintenanceRequest["status"][]
-        > = {
-            new: ["in_progress", "rejected"],
-            in_progress: ["done", "rejected"],
-            done: [],
-            rejected: [],
-        };
+    ): Promise<MaintenanceRequest> {
+        return sequelize.transaction(async (transaction) => {
+            const current = await this.maintenanceRequestRepo.findByIdForUpdate(
+                id,
+                transaction,
+            );
+            if (!current) {
+                throw new NotFoundError("Maintenance request not found");
+            }
 
-        if (!allowedTransitions[current.status].includes(input.status)) {
-            throw new ConflictError("Invalid maintenance request status transition");
-        }
+            const allowedTransitions: Record<
+                MaintenanceRequest["status"],
+                MaintenanceRequest["status"][]
+            > = {
+                new: ["in_progress", "rejected"],
+                in_progress: ["done", "rejected"],
+                done: [],
+                rejected: [],
+            };
+            if (!allowedTransitions[current.status].includes(input.status)) {
+                throw new ConflictError("Invalid maintenance request status transition");
+            }
 
-        const updated = this.maintenanceRequestRepo.update(id, {
-            status: input.status,
-            updatedAt: new Date().toISOString(),
+            if (input.status === "in_progress") {
+                const assigneeCount = await this.maintenanceRequestRepo.countAssignees(
+                    id,
+                    transaction,
+                );
+                if (assigneeCount === 0) {
+                    throw new ConflictError(
+                        "Maintenance request cannot start without assigned technicians",
+                    );
+                }
+            }
+
+            await this.maintenanceRequestRepo.updateStatus(
+                current,
+                input.status,
+                transaction,
+            );
+            await this.maintenanceRequestRepo.createHistoryEntry({
+                requestId: id,
+                previousStatus: current.status,
+                newStatus: input.status,
+                changedBy: input.changedBy ?? "system",
+                comment: input.comment ?? null,
+            }, transaction);
+
+            return this.maintenanceRequestRepo.reloadInTransaction(id, transaction);
         });
-
-        if (!updated) {
-            throw new NotFoundError("Maintenance request not found");
-        }
-
-        return updated;
     }
 
-    delete(id: string): MaintenanceRequest {
-        this.findById(id);
-        const deletedRequest = this.maintenanceRequestRepo.delete(id);
-
-        if (!deletedRequest) {
-            throw new NotFoundError("Maintenance request not found");
+    async replaceAssignees(
+        id: string,
+        input: ReplaceRequestAssigneesInput,
+    ): Promise<MaintenanceRequest> {
+        const ids = input.assignees.map(({ technicianId }) => technicianId);
+        if (new Set(ids).size !== ids.length) {
+            throw new ConflictError("A technician can only be assigned once per request");
         }
 
-        return deletedRequest;
+        const leadCount = input.assignees.filter(({ role }) => role === "lead").length;
+        if (leadCount !== 1) {
+            throw new UnprocessableEntityError(
+                "Exactly one technician must have the lead role",
+            );
+        }
+
+        return sequelize.transaction(async (transaction) => {
+            const request = await this.maintenanceRequestRepo.findByIdForUpdate(
+                id,
+                transaction,
+            );
+            if (!request) {
+                throw new NotFoundError("Maintenance request not found");
+            }
+
+            const technicians = await this.maintenanceRequestRepo.findTechnicians(
+                ids,
+                transaction,
+            );
+            if (technicians.length !== ids.length) {
+                throw new NotFoundError("Technician not found");
+            }
+
+            await this.maintenanceRequestRepo.replaceAssignees(
+                id,
+                input.assignees,
+                transaction,
+            );
+            return this.maintenanceRequestRepo.reloadInTransaction(id, transaction);
+        });
+    }
+
+    async removeAssignee(
+        requestId: string,
+        technicianId: string,
+    ): Promise<void> {
+        await sequelize.transaction(async (transaction) => {
+            const request = await this.maintenanceRequestRepo.findByIdForUpdate(
+                requestId,
+                transaction,
+            );
+            if (!request) {
+                throw new NotFoundError("Maintenance request not found");
+            }
+
+            const assignment = await this.maintenanceRequestRepo.findAssignee(
+                requestId,
+                technicianId,
+                transaction,
+            );
+            if (!assignment) {
+                throw new NotFoundError("Technician is not assigned to this request");
+            }
+
+            if (assignment.role === "lead") {
+                const assignmentCount = await this.maintenanceRequestRepo.countAssignees(
+                    requestId,
+                    transaction,
+                );
+                if (request.status === "in_progress" && assignmentCount === 1) {
+                    throw new ConflictError(
+                        "An in-progress request must retain at least one assigned technician",
+                    );
+                }
+                if (assignmentCount > 1) {
+                    throw new UnprocessableEntityError(
+                        "The lead cannot be removed while other technicians remain assigned",
+                    );
+                }
+            }
+
+            const deleted = await this.maintenanceRequestRepo.removeAssignee(
+                requestId,
+                technicianId,
+                transaction,
+            );
+            if (deleted === 0) {
+                throw new NotFoundError("Technician is not assigned to this request");
+            }
+        });
+    }
+
+    async getHistory(id: string) {
+        await this.findById(id);
+        return this.maintenanceRequestRepo.findHistory(id);
+    }
+
+    async delete(id: string): Promise<MaintenanceRequest> {
+        await this.findById(id);
+        try {
+            const deletedRequest = await this.maintenanceRequestRepo.delete(id);
+            if (!deletedRequest) {
+                throw new NotFoundError("Maintenance request not found");
+            }
+            return deletedRequest;
+        } catch (error) {
+            if (error instanceof ForeignKeyConstraintError) {
+                throw new ConflictError("Maintenance request has immutable status history");
+            }
+            throw error;
+        }
     }
 }
 

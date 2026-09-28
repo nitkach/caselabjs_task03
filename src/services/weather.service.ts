@@ -38,7 +38,7 @@ export class WeatherService {
     async getForecastForEquipment(
         equipmentId: string,
     ): Promise<EquipmentWeatherForecast> {
-        const equipment = equipmentService.findById(equipmentId);
+        const equipment = await equipmentService.findById(equipmentId);
         const url = new URL(env.weatherApiUrl);
 
         url.search = new URLSearchParams({

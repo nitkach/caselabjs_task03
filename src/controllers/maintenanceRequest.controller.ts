@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import { maintenanceRequestService } from "../services/maintenanceRequest.service.js";
 import type {
     CreateMaintenanceRequestInput,
+    ReplaceRequestAssigneesInput,
     UpdateMaintenanceRequestInput,
     UpdateMaintenanceRequestStatusInput,
 } from "../schemas/maintenanceRequest.schema.js";
@@ -11,7 +12,7 @@ import {
 } from "../schemas/list.schema.js";
 import { ValidationError } from "../errors/appError.js";
 
-export function listMaintenanceRequest(req: Request, res: Response): void {
+export async function listMaintenanceRequest(req: Request, res: Response): Promise<void> {
     const parsed = maintenanceRequestListQuerySchema.safeParse(req.query);
     if (!parsed.success) {
         throw new ValidationError("Invalid request list query");
@@ -19,16 +20,16 @@ export function listMaintenanceRequest(req: Request, res: Response): void {
 
     res.json({
         success: true,
-        ...maintenanceRequestService.findAll(parsed.data),
+        ...await maintenanceRequestService.findAll(parsed.data),
     });
 };
 
 
-export function createMaintenanceRequest(
+export async function createMaintenanceRequest(
     req: Request<Record<string, never>, unknown, CreateMaintenanceRequestInput>,
     res: Response<unknown>
-): void {
-    const maintenanceRequest = maintenanceRequestService.create(req.body);
+): Promise<void> {
+    const maintenanceRequest = await maintenanceRequestService.create(req.body);
 
     res.status(201).json({
         success: true,
@@ -36,19 +37,19 @@ export function createMaintenanceRequest(
     });
 }
 
-export function getMaintenanceRequest(req: Request<{ id: string }>, res: Response<unknown>): void {
+export async function getMaintenanceRequest(req: Request<{ id: string }>, res: Response<unknown>): Promise<void> {
     res.json({
         success: true,
-        data: maintenanceRequestService.findById(req.params.id),
+        data: await maintenanceRequestService.findById(req.params.id),
     });
 }
 
 
-export function patchMaintenanceRequest(
+export async function patchMaintenanceRequest(
     req: Request<{ id: string }, unknown, UpdateMaintenanceRequestInput>,
     res: Response<unknown>
-): void {
-    const maintenanceRequest = maintenanceRequestService.update(req.params.id, req.body);
+): Promise<void> {
+    const maintenanceRequest = await maintenanceRequestService.update(req.params.id, req.body);
 
     res.status(200).json({
         success: true,
@@ -56,11 +57,11 @@ export function patchMaintenanceRequest(
     });
 }
 
-export function patchMaintenanceRequestStatus(
+export async function patchMaintenanceRequestStatus(
     req: Request<{ id: string }, unknown, UpdateMaintenanceRequestStatusInput>,
     res: Response<unknown>,
-): void {
-    const maintenanceRequest = maintenanceRequestService.updateStatus(
+): Promise<void> {
+    const maintenanceRequest = await maintenanceRequestService.updateStatus(
         req.params.id,
         req.body,
     );
@@ -71,12 +72,45 @@ export function patchMaintenanceRequestStatus(
     });
 }
 
-
-export function deleteMaintenanceRequest(req: Request<{ id: string }>, res: Response<unknown>): void {
-    const maintenanceRequest = maintenanceRequestService.delete(req.params.id);
+export async function replaceRequestAssignees(
+    req: Request<{ id: string }, unknown, ReplaceRequestAssigneesInput>,
+    res: Response<unknown>,
+): Promise<void> {
+    const maintenanceRequest = await maintenanceRequestService.replaceAssignees(
+        req.params.id,
+        req.body,
+    );
 
     res.status(200).json({
         success: true,
         data: maintenanceRequest,
     });
+}
+
+export async function removeRequestAssignee(
+    req: Request<{ id: string; userId: string }>,
+    res: Response<unknown>,
+): Promise<void> {
+    await maintenanceRequestService.removeAssignee(
+        req.params.id,
+        req.params.userId,
+    );
+    res.sendStatus(204);
+}
+
+export async function getMaintenanceRequestHistory(
+    req: Request<{ id: string }>,
+    res: Response<unknown>,
+): Promise<void> {
+    res.status(200).json({
+        success: true,
+        data: await maintenanceRequestService.getHistory(req.params.id),
+    });
+}
+
+
+export async function deleteMaintenanceRequest(req: Request<{ id: string }>, res: Response<unknown>): Promise<void> {
+    await maintenanceRequestService.delete(req.params.id);
+
+    res.sendStatus(204);
 }

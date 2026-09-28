@@ -1,11 +1,17 @@
-import { randomUUID } from "node:crypto";
+import { ForeignKeyConstraintError } from "sequelize";
 
 import type {
     CreateEquipmentInput,
     Equipment,
 } from "../models/equipment.model.js";
-import { EquipmentRepository, equipmentRepository } from "../repositories/equipment.repository.js";
-import { MaintenanceRequestRepository, maintenanceRequestRepository } from "../repositories/maintenanceRequest.repository.js";
+import {
+    EquipmentRepository,
+    equipmentRepository,
+} from "../repositories/equipment.repository.js";
+import {
+    MaintenanceRequestRepository,
+    maintenanceRequestRepository,
+} from "../repositories/maintenanceRequest.repository.js";
 import { ConflictError, NotFoundError } from "../errors/appError.js";
 import type { UpdateEquipmentInput } from "../schemas/equipment.schema.js";
 import type { EquipmentListQuery } from "../schemas/list.schema.js";
@@ -16,41 +22,24 @@ export class EquipmentService {
         private readonly maintenanceRequestRepo: MaintenanceRequestRepository = maintenanceRequestRepository,
     ) { }
 
-    findAll(query?: EquipmentListQuery): {
+    async findAll(query: EquipmentListQuery = {
+        page: 1,
+        limit: 20,
+        sortBy: "name",
+        sortOrder: "asc",
+    }): Promise<{
         data: Equipment[];
         meta: { total: number; page: number; limit: number };
-    } {
-        const options = query ?? {
-            page: 1,
-            limit: 20,
-            sortBy: "name" as const,
-            sortOrder: "asc" as const,
-        };
-        let items = this.equipmentRepo.findAll();
-
-        if (options.status) items = items.filter((item) => item.status === options.status);
-        if (options.type) items = items.filter((item) => item.type === options.type);
-        if (options.installedFrom) items = items.filter((item) => item.installedAt >= options.installedFrom!);
-        if (options.installedTo) items = items.filter((item) => item.installedAt <= options.installedTo!);
-
-        const direction = options.sortOrder === "asc" ? 1 : -1;
-        items.sort((left, right) => {
-            const leftValue = left[options.sortBy];
-            const rightValue = right[options.sortBy];
-            return String(leftValue).localeCompare(String(rightValue)) * direction;
-        });
-
-        const total = items.length;
-        const start = (options.page - 1) * options.limit;
-
+    }> {
+        const result = await this.equipmentRepo.findAll(query);
         return {
-            data: items.slice(start, start + options.limit),
-            meta: { total, page: options.page, limit: options.limit },
+            data: result.rows,
+            meta: { total: result.count, page: query.page, limit: query.limit },
         };
     }
 
-    findById(id: string): Equipment {
-        const equipment = this.equipmentRepo.findById(id);
+    async findById(id: string): Promise<Equipment> {
+        const equipment = await this.equipmentRepo.findById(id);
 
         if (!equipment) {
             throw new NotFoundError("Equipment not found");
@@ -59,52 +48,61 @@ export class EquipmentService {
         return equipment;
     }
 
-    create(input: CreateEquipmentInput): Equipment {
-        if (this.equipmentRepo.findBySerialNumber(input.serialNumber)) {
-            throw new ConflictError("Serial number is already in use");
-        }
-
+    async create(input: CreateEquipmentInput): Promise<Equipment> {
         return this.equipmentRepo.create({
-            id: randomUUID(),
             ...input,
+            installedAt: new Date(input.installedAt),
         });
     }
 
-    update(id: string, input: UpdateEquipmentInput): Equipment {
-        const current = this.findById(id);
+    async update(id: string, input: UpdateEquipmentInput): Promise<Equipment> {
+        const current = await this.findById(id);
 
         if (
             input.serialNumber !== undefined &&
             input.serialNumber !== current.serialNumber
         ) {
-            const duplicate = this.equipmentRepo.findBySerialNumber(input.serialNumber);
+            const duplicate = await this.equipmentRepo.findBySerialNumber(input.serialNumber);
 
             if (duplicate && duplicate.id !== id) {
                 throw new ConflictError("Serial number is already in use");
             }
         }
 
-        const updated = this.equipmentRepo.update(id, input);
-
+        const { installedAt, ...changes } = input;
+        const updated = await this.equipmentRepo.update(id, {
+            ...changes,
+            ...(installedAt === undefined
+                ? {}
+                : { installedAt: new Date(installedAt) }),
+        });
         if (!updated) {
             throw new NotFoundError("Equipment not found");
         }
-
         return updated;
     }
 
-    delete(id: string): Equipment {
-        const equipment = this.findById(id);
+    async delete(id: string): Promise<Equipment> {
+        const equipment = await this.findById(id);
         const hasOpenMaintenanceRequest =
-            this.maintenanceRequestRepo.hasOpenByEquipmentId(id);
+            await this.maintenanceRequestRepo.hasOpenByEquipmentId(id);
 
         if (hasOpenMaintenanceRequest) {
             throw new ConflictError("Equipment has open maintenance requests");
         }
 
-        this.equipmentRepo.delete(id);
-
-        return equipment;
+        try {
+            const deleted = await this.equipmentRepo.delete(id);
+            if (!deleted) {
+                throw new NotFoundError("Equipment not found");
+            }
+            return deleted;
+        } catch (error) {
+            if (error instanceof ForeignKeyConstraintError) {
+                throw new ConflictError("Equipment is still referenced by maintenance requests");
+            }
+            throw error;
+        }
     }
 }
 
